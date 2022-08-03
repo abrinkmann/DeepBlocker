@@ -1,4 +1,6 @@
-FASTTEXT_EMBEDDIG_PATH = "embedding/wiki.en.bin"
+import os
+
+FASTTEXT_EMBEDDIG_PATH = "{}embedding/wiki.en.bin".format(os.environ['DATA_DIR'])
 #Dimension of the word embeddings.
 EMB_DIMENSION_SIZE = 300
 #Embedding size of AutoEncoder embedding

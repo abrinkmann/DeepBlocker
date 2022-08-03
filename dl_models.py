@@ -3,14 +3,13 @@
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from configurations import * 
+from tqdm import tqdm
+
+from configurations import *
 
 def get_device():
-    if torch.cuda.is_available():
-        device = 'cuda:0'
-    else:
-        device = 'cpu'
-    return device
+    return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 #This is a simple dataset for loading numpy matrices
 class NumPy_Dataset(Dataset):
@@ -66,7 +65,8 @@ class AutoEncoder(nn.Module):
  
     def get_tuple_embedding(self, t1):
         with torch.no_grad():
-            return self.encoder(t1).detach().numpy()
+            t1 = t1.to(get_device())
+            return self.encoder(t1).cpu().detach().numpy()
 
 
 class AutoEncoderTrainer:
@@ -88,7 +88,7 @@ class AutoEncoderTrainer:
 
         self.model.train()
 
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs)):
             train_loss = 0
             for batch_idx, data in enumerate(train_dataloader):
                 data = data.to(self.device)
@@ -134,7 +134,8 @@ class CTTModel(nn.Module):
 
     def get_tuple_embedding(self, t1):
         with torch.no_grad():
-            return self.siamese_summarizer(t1).detach().numpy()
+            t1 = t1.to(get_device())
+            return self.siamese_summarizer(t1).cpu().detach().numpy()
 
 class CTTModelTrainer:
     def __init__(self, input_dimension, hidden_dimensions):
@@ -157,7 +158,7 @@ class CTTModelTrainer:
 
         self.model.train()
 
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs)):
             train_loss = 0
             for batch_idx, (left, right, label) in enumerate(train_dataloader):
                 left = left.to(self.device)

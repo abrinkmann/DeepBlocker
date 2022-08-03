@@ -1,9 +1,11 @@
 #GiG
 
 from collections import Counter
-import random 
+import random
+from datetime import datetime
 
 import numpy as np
+import pandas as pd
 from sklearn.decomposition import TruncatedSVD
 import torch 
 
@@ -14,13 +16,16 @@ import dl_models
 from configurations import *
 
 #This is the Abstract Base Class for all Tuple Embedding models
+from convert_synthetic_training_data import convert_synthetic_data_to_clustered_data
+
+
 class ABCTupleEmbedding:
     def __init__(self):
         pass 
 
     #This function is used as a preprocessing step 
     # this could be used to compute frequencies, train a DL model etc
-    def preprocess(self, list_of_tuples):
+    def preprocess(self, left_df, right_df, train_pairs=None, dataset_name=None):
         pass 
 
     #This function computes the tuple embedding.
@@ -48,7 +53,7 @@ class AverageEmbedding(ABCTupleEmbedding):
 
 
     #There is no pre processing needed for Average Embedding
-    def preprocess(self, list_of_tuples):
+    def preprocess(self, left_df, right_df, train_pairs=None):
         pass
 
     #list_of_strings is an Iterable of tuples as strings
@@ -103,7 +108,8 @@ class SIFEmbedding(ABCTupleEmbedding):
 
 
     #There is no pre processing needed for Average Embedding
-    def preprocess(self, list_of_tuples):
+    def preprocess(self, left_df, right_df, train_pairs=None):
+        list_of_tuples = pd.concat([left_df["_merged_text"], right_df["_merged_text"]], ignore_index=True)
         for tuple_as_str in list_of_tuples:
             self.word_to_frequencies.update(self.tokenizer(tuple_as_str))
 
@@ -155,9 +161,10 @@ class AutoEncoderTupleEmbedding(ABCTupleEmbedding):
 
     #This function is used as a preprocessing step 
     # this could be used to compute frequencies, train a DL model etc
-    def preprocess(self, list_of_tuples):
+    def preprocess(self, left_df, right_df, train_pairs=None, dataset_name=None):
         print("Training AutoEncoder model")
-        self.sif_embedding_model.preprocess(list_of_tuples)
+        list_of_tuples = pd.concat([left_df["_merged_text"], right_df["_merged_text"]], ignore_index=True)
+        self.sif_embedding_model.preprocess(left_df, right_df)
         embedding_matrix = self.sif_embedding_model.get_tuple_embedding(list_of_tuples)
         trainer = dl_models.AutoEncoderTrainer (self.input_dimension, self.hidden_dimensions)
         self.autoencoder_model = trainer.train(embedding_matrix, num_epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
@@ -184,7 +191,7 @@ class AutoEncoderTupleEmbedding(ABCTupleEmbedding):
 # for each tuple t in list_of_tuples, 
 # we generate synth_tuples_per_tuple positive tuple pairs
 # and synth_tuples_per_tuple * pos_to_neg_ratio negative tuple pairs
-def generate_synthetic_training_data(list_of_tuples, synth_tuples_per_tuple=5, 
+def generate_synthetic_training_data(list_of_tuples, list_of_sources, dataset_name, synth_tuples_per_tuple=5,
         pos_to_neg_ratio=1, max_perturbation=0.4):
     num_positives_per_tuple = synth_tuples_per_tuple
     num_negatives_per_tuple = synth_tuples_per_tuple * pos_to_neg_ratio
@@ -196,13 +203,16 @@ def generate_synthetic_training_data(list_of_tuples, synth_tuples_per_tuple=5,
     # and the remaining correspond to T'
     left_tuple_list = [None for _ in range(total_number_of_elems)]
     right_tuple_list = [None for _ in range(total_number_of_elems)]
+    source_list = [None for _ in range(total_number_of_elems)]
     label_list = [0 for _ in range(total_number_of_elems) ]
+    tuple_id_list = [None for _ in range(total_number_of_elems)]
 
     random.seed(RANDOM_SEED)
 
     tokenizer = get_tokenizer("basic_english")
     for index in range(len(list_of_tuples)):
         tokenized_tuple = tokenizer(list_of_tuples[index])
+        source = list_of_sources[index]
         max_tokens_to_remove = int(len(tokenized_tuple) * max_perturbation)
      
         training_data_index = index * (num_positives_per_tuple + num_negatives_per_tuple)
@@ -222,15 +232,53 @@ def generate_synthetic_training_data(list_of_tuples, synth_tuples_per_tuple=5,
             left_tuple_list[training_data_index] = list_of_tuples[index]
             right_tuple_list[training_data_index] = ' '.join(tokenized_tuple_copy)
             label_list[training_data_index] = 1
+            source_list[training_data_index] = source
+            tuple_id_list[training_data_index] = index
             training_data_index += 1
 
         for temp_index in range(num_negatives_per_tuple):
             left_tuple_list[training_data_index] = list_of_tuples[index]
             right_tuple_list[training_data_index] = random.choice(list_of_tuples)
             label_list[training_data_index] = 0
+            source_list[training_data_index] = source
+            tuple_id_list[training_data_index] = index
             training_data_index += 1
+
+    s_left_tuple_list = pd.Series(left_tuple_list)
+    s_right_tuple_list = pd.Series(right_tuple_list)
+    s_label_list = pd.Series(label_list)
+    s_source_list = pd.Series(source_list)
+    s_tuple_id_list = pd.Series(tuple_id_list)
+
+    df_synthetic_data = s_left_tuple_list.to_frame(name='left_tuples').merge(s_right_tuple_list.to_frame(name='right_tuples'), left_index=True, right_index=True) \
+        .merge(s_source_list.to_frame(name='source'), left_index=True, right_index=True) \
+        .merge(s_tuple_id_list.to_frame(name='cluster_id'), left_index=True, right_index=True) \
+        .merge(s_label_list.to_frame(name='labels'), left_index=True, right_index=True)
+
+    convert_synthetic_data_to_clustered_data(df_synthetic_data, dataset_name)
+    #string_timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    # filename_synthetic_training_data = 'synthetic_training_data_{}_{}.csv'.format(string_timestamp, dataset_name)
+    #df_synthetic_data.to_csv(filename_synthetic_training_data, sep=';', encoding='utf-8', index=False)
+
+
+    #print('Saved Synthetic training data - {}!'.format(string_timestamp))
+
+
     return left_tuple_list, right_tuple_list, label_list
     
+
+def generate_training_data(left_df, right_df, train_pairs):
+
+    left_tuple_list = []
+    right_tuple_list = []
+    label_list = []
+
+    for index, row in train_pairs.iterrows():
+        left_tuple_list.append(left_df.loc[left_df['id'] == str(row['ltable_id'])].iloc[0]['_merged_text'])
+        right_tuple_list.append(right_df.loc[right_df['id'] == str(row['rtable_id'])].iloc[0]['_merged_text'])
+        label_list.append(row['label'])
+
+    return left_tuple_list, right_tuple_list, label_list
 
 
 class CTTTupleEmbedding(ABCTupleEmbedding):
@@ -249,12 +297,30 @@ class CTTTupleEmbedding(ABCTupleEmbedding):
 
     #This function is used as a preprocessing step 
     # this could be used to compute frequencies, train a DL model etc
-    def preprocess(self, list_of_tuples):
+    def preprocess(self, left_df, right_df, train_pairs=None, dataset_name=None):
         print("Training CTT model")
-        self.sif_embedding_model.preprocess(list_of_tuples)
 
-        left_tuple_list, right_tuple_list, label_list = generate_synthetic_training_data(list_of_tuples, 
-            self.synth_tuples_per_tuple, self.pos_to_neg_ratio, self.max_perturbation)
+        self.sif_embedding_model.preprocess(left_df, right_df)
+
+        if train_pairs is None:
+            # Generate syntatic training data
+            print("Generate syntatic training data")
+            left_df['source'] = 'table_a'
+            right_df['source'] = 'table_b'
+            list_of_tuples = pd.concat([left_df["_merged_text"], right_df["_merged_text"]],
+                                       ignore_index=True)
+            list_of_sources = pd.concat([left_df["source"], right_df["source"]],
+                                       ignore_index=True)
+            left_tuple_list, right_tuple_list, label_list = generate_synthetic_training_data(list_of_tuples,
+                                                                                             list_of_sources,
+                                                                                             dataset_name,
+                                                                                             self.synth_tuples_per_tuple,
+                                                                                             self.pos_to_neg_ratio,
+                                                                                             self.max_perturbation)
+        else:
+            # Use existing training data
+            print("Use existing training data")
+            left_tuple_list, right_tuple_list, label_list = generate_training_data(left_df, right_df, train_pairs)
 
         self.left_embedding_matrix = self.sif_embedding_model.get_tuple_embedding(left_tuple_list)
         self.right_embedding_matrix = self.sif_embedding_model.get_tuple_embedding(right_tuple_list)
@@ -297,8 +363,9 @@ class HybridTupleEmbedding(ABCTupleEmbedding):
 
     #This function is used as a preprocessing step 
     # this could be used to compute frequencies, train a DL model etc
-    def preprocess(self, list_of_tuples):
+    def preprocess(self, left_df, right_df, train_pairs=None):
         print("Training CTT model")
+        list_of_tuples = pd.concat([left_df["_merged_text"], right_df["_merged_text"]], ignore_index=True)
         self.autoencoder_embedding_model.preprocess(list_of_tuples)
 
         left_tuple_list, right_tuple_list, label_list = generate_synthetic_training_data(list_of_tuples, 

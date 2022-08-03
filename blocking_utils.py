@@ -27,7 +27,7 @@ def compute_blocking_statistics(candidate_set_df, golden_df, left_df, right_df):
         "left_num_tuples": left_num_tuples,
         "right_num_tuples": right_num_tuples,
         "recall": len(merged_df) / len(golden_df),
-        "cssr": len(candidate_set_df) / (left_num_tuples * right_num_tuples)
+        "cssr": len(candidate_set_df) / (left_num_tuples * right_num_tuples),
         }
 
     return statistics_dict
