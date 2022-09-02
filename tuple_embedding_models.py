@@ -12,11 +12,11 @@ import torch
 import fasttext  
 from torchtext.data import get_tokenizer
 
-import dl_models
-from configurations import *
+import src.finetuning.open_book.deepblocker.dl_models as dl_models
+from src.finetuning.open_book.deepblocker.configurations import *
 
 #This is the Abstract Base Class for all Tuple Embedding models
-from convert_synthetic_training_data import convert_synthetic_data_to_clustered_data
+from src.finetuning.open_book.deepblocker.convert_synthetic_training_data import convert_synthetic_data_to_clustered_data
 
 
 class ABCTupleEmbedding:

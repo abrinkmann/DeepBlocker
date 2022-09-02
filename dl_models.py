@@ -5,7 +5,7 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-from configurations import *
+from src.finetuning.open_book.deepblocker.configurations import *
 
 def get_device():
     return torch.device('cuda' if torch.cuda.is_available() else 'cpu')

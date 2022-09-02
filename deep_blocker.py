@@ -4,7 +4,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import blocking_utils
+import src.finetuning.open_book.deepblocker.blocking_utils as blocking_utils
 from entity_serialization import EntitySerializer
 
 
